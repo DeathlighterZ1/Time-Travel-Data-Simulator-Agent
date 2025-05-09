@@ -9,11 +9,181 @@ import requests
 import datetime
 from dotenv import load_dotenv
 
-# Import the TimeSimulator class
-from time_travel_simulator import TimeSimulator, test_apis
-
 # Load API keys from Streamlit secrets
 NASA_API_KEY = st.secrets.get("NASA_API_KEY", "DEMO_KEY")
+
+# Define TimeSimulator class directly in this file
+class TimeSimulator:
+    def __init__(self):
+        self.data_sources = {
+            "climate": self.get_climate_data,
+            "population": self.get_population_data,
+            "land_use": self.get_land_use_data,
+            "natural_events": self.get_natural_events
+        }
+    
+    def get_climate_data(self, location, year):
+        try:
+            # For historical data (Open-Meteo has data from 1940 to now)
+            if year <= 2023 and year >= 1940:
+                st.write(f"Attempting to fetch climate data from Open-Meteo API for {location}, {year}...")
+                # Parse location (simplified)
+                # In production, use geocoding API
+                lat, lon = 40.7128, -74.0060  # Default to NYC coordinates
+                
+                # Open-Meteo API for historical temperature data
+                start_date = f"{year}-01-01"
+                end_date = f"{year}-12-31"
+                meteo_url = f"https://archive-api.open-meteo.com/v1/archive"
+                params = {
+                    "latitude": lat,
+                    "longitude": lon,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "daily": "temperature_2m_mean",
+                    "timezone": "auto"
+                }
+                
+                response = requests.get(meteo_url, params=params)
+                if response.status_code == 200:
+                    st.success("Open-Meteo API: Data retrieved successfully")
+                    data = response.json()
+                    # Calculate annual average temperature
+                    temps = data.get('daily', {}).get('temperature_2m_mean', [])
+                    if temps:
+                        # Filter out None values
+                        valid_temps = [t for t in temps if t is not None]
+                        avg_temp = sum(valid_temps) / len(valid_temps) if valid_temps else 15
+                        return {"temperature": avg_temp}
+                    else:
+                        st.error("Open-Meteo API: No temperature data returned")
+                else:
+                    st.error(f"Open-Meteo API: Failed with status code {response.status_code}")
+            
+            # Fallback to simulation
+            st.info("Using fallback climate data simulation")
+            return self._fallback_climate_data(location, year)
+        except Exception as e:
+            st.error(f"API error: {str(e)}, using fallback data")
+            return self._fallback_climate_data(location, year)
+        
+    def _fallback_climate_data(self, location, year):
+        # Existing simulation logic as fallback
+        if year > 2023:  # Future prediction
+            base_temp = 15 + np.random.normal(0, 2)
+            # Assume warming trend
+            predicted_temp = base_temp + (year - 2023) * 0.03
+            return {"temperature": predicted_temp}
+        else:  # Historical data
+            # Simplified historical climate model
+            base_temp = 14 + np.random.normal(0, 3)
+            return {"temperature": base_temp}
+    
+    def get_population_data(self, location, year):
+        # Simplified population model
+        base_pop = 1000000 * np.random.uniform(0.5, 5)
+        if year > 2023:
+            # Exponential growth model
+            growth_rate = 1.01
+            years_from_now = year - 2023
+            predicted_pop = base_pop * (growth_rate ** years_from_now)
+            return {"population": predicted_pop}
+        else:
+            # Historical population (simplified)
+            growth_factor = (year - 1900) / 123 if year > 1900 else 0.1
+            historical_pop = base_pop * growth_factor
+            return {"population": max(10000, historical_pop)}
+    
+    def get_land_use_data(self, location, year):
+        # Simplified land use model
+        if year > 2023:
+            urban = min(0.8, 0.3 + (year - 2023) * 0.01)
+            forest = max(0.1, 0.3 - (year - 2023) * 0.005)
+            agriculture = 1 - urban - forest
+        else:
+            urban = max(0.05, min(0.3, (year - 1900) * 0.002))
+            forest = max(0.2, min(0.6, 0.6 - (year - 1900) * 0.001))
+            agriculture = 1 - urban - forest
+            
+        return {
+            "urban": urban,
+            "forest": forest, 
+            "agriculture": agriculture
+        }
+    
+    def get_natural_events(self, location, year):
+        """Get natural events data from NASA EONET API"""
+        # Only works for recent years (typically last 120 days)
+        if year >= 2023:
+            try:
+                st.write(f"Attempting to fetch natural events data from NASA EONET API...")
+                eonet_url = "https://eonet.gsfc.nasa.gov/api/v3/events"
+                params = {
+                    "api_key": NASA_API_KEY,
+                    "status": "open"  # Get currently active events
+                }
+                
+                response = requests.get(eonet_url, params=params)
+                if response.status_code == 200:
+                    st.success("NASA EONET API: Data retrieved successfully")
+                    events_data = response.json()
+                    # Filter and process events
+                    events = events_data.get('events', [])
+                    event_counts = {
+                        "wildfires": 0,
+                        "storms": 0,
+                        "floods": 0,
+                        "drought": 0,
+                        "other": 0
+                    }
+                    
+                    for event in events:
+                        category = event.get('categories', [{}])[0].get('id', 'other')
+                        if category == 'wildfires':
+                            event_counts['wildfires'] += 1
+                        elif category in ['severeStorms', 'volcanoes']:
+                            event_counts['storms'] += 1
+                        elif category == 'floods':
+                            event_counts['floods'] += 1
+                        elif category == 'drought':
+                            event_counts['drought'] += 1
+                        else:
+                            event_counts['other'] += 1
+                    
+                    return event_counts
+                else:
+                    st.error(f"NASA EONET API: Failed with status code {response.status_code}")
+            except Exception as e:
+                st.error(f"EONET API error: {str(e)}")
+        
+        # Fallback or historical simulation
+        st.info("Using simulated natural events data")
+        return {
+            "wildfires": int(np.random.poisson(3 + (year - 2000) * 0.1 if year > 2000 else 1)),
+            "storms": int(np.random.poisson(5 + (year - 2000) * 0.05 if year > 2000 else 2)),
+            "floods": int(np.random.poisson(2 + (year - 2000) * 0.03 if year > 2000 else 1)),
+            "drought": int(np.random.poisson(1 + (year - 2000) * 0.02 if year > 2000 else 0)),
+            "other": int(np.random.poisson(2))
+        }
+    
+    def simulate(self, location, year, data_type):
+        if data_type in self.data_sources:
+            return self.data_sources[data_type](location, year)
+        return {"error": "Data type not supported"}
+
+# Function to test API connections
+def test_apis():
+    """Test API connections and display status"""
+    # Test NASA API
+    try:
+        test_url = f"https://api.nasa.gov/planetary/apod?api_key={NASA_API_KEY}"
+        response = requests.get(test_url)
+        if response.status_code == 200:
+            return "NASA API: Connected successfully"
+        else:
+            return f"NASA API: Connection failed (Status code: {response.status_code})"
+    except Exception as e:
+        return f"NASA API: Connection error - {str(e)}"
 
 # Page config
 st.set_page_config(
@@ -201,3 +371,5 @@ st.sidebar.markdown("""
 # Footer
 st.sidebar.markdown("---")
 st.sidebar.markdown("© 2023 Time-Travel Data Simulator")
+
+
