@@ -1,0 +1,11 @@
+numpy
+pandas
+matplotlib
+streamlit
+requests
+folium
+python-dotenv
+streamlit-folium
+
+
+
